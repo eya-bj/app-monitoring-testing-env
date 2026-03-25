@@ -1,0 +1,184 @@
+networks:
+  monitoring-network:
+    driver: bridge
+
+services:
+
+  # ─────────────────────────────────────────
+  # MONITORING PLATFORM
+  # ─────────────────────────────────────────
+  monitoring-platform:
+    build:
+      context: ../appmonitioring
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://monitoring-db:5432/app_monitoring_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: admin123
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_QUARTZ_JDBC_INITIALIZE_SCHEMA: always
+    depends_on:
+      - monitoring-db
+    networks:
+      - monitoring-network
+
+  monitoring-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: app_monitoring_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin123
+    networks:
+      - monitoring-network
+
+  # ─────────────────────────────────────────
+  # STABLE APP CLUSTER
+  # ─────────────────────────────────────────
+  stable-app-node1:
+    build:
+      context: ../target-app
+      dockerfile: Dockerfile
+    environment:
+      SFTP_HOST: stable-sftp
+      SFTP_USERNAME: monitor
+      SFTP_PASSWORD: password
+      SFTP_FOLDER: /reports
+    depends_on:
+      - stable-sftp
+    networks:
+      - monitoring-network
+
+  stable-app-node2:
+    build:
+      context: ../target-app
+      dockerfile: Dockerfile
+    environment:
+      SFTP_HOST: stable-sftp
+      SFTP_USERNAME: monitor
+      SFTP_PASSWORD: password
+      SFTP_FOLDER: /reports
+    depends_on:
+      - stable-sftp
+    networks:
+      - monitoring-network
+
+  stable-app-node3:
+    build:
+      context: ../target-app
+      dockerfile: Dockerfile
+    environment:
+      SFTP_HOST: stable-sftp
+      SFTP_USERNAME: monitor
+      SFTP_PASSWORD: password
+      SFTP_FOLDER: /reports
+    depends_on:
+      - stable-sftp
+    networks:
+      - monitoring-network
+
+  stable-source-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: stable_source
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - ./sql/stable-source-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - monitoring-network
+
+  stable-target-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: stable_target
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - ./sql/stable-target-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - monitoring-network
+
+  stable-sftp:
+    image: atmoz/sftp
+    command: monitor:password:::reports
+    volumes:
+      - ./sftp/stable:/home/monitor/reports
+    networks:
+      - monitoring-network
+
+  # ─────────────────────────────────────────
+  # UNSTABLE APP CLUSTER
+  # ─────────────────────────────────────────
+  unstable-app-node1:
+    build:
+      context: ../target-app
+      dockerfile: Dockerfile
+    environment:
+      SFTP_HOST: unstable-sftp
+      SFTP_USERNAME: monitor
+      SFTP_PASSWORD: password
+      SFTP_FOLDER: /reports
+    depends_on:
+      - unstable-sftp
+    networks:
+      - monitoring-network
+
+  unstable-app-node2:
+    build:
+      context: ../target-app
+      dockerfile: Dockerfile
+    environment:
+      SFTP_HOST: unstable-sftp
+      SFTP_USERNAME: monitor
+      SFTP_PASSWORD: password
+      SFTP_FOLDER: /reports
+    depends_on:
+      - unstable-sftp
+    networks:
+      - monitoring-network
+
+  unstable-app-node3:
+    build:
+      context: ../target-app
+      dockerfile: Dockerfile
+    environment:
+      SFTP_HOST: unstable-sftp
+      SFTP_USERNAME: monitor
+      SFTP_PASSWORD: password
+      SFTP_FOLDER: /reports
+    depends_on:
+      - unstable-sftp
+    networks:
+      - monitoring-network
+
+  unstable-source-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: unstable_source
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - ./sql/unstable-source-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - monitoring-network
+
+  unstable-target-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: unstable_target
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    volumes:
+      - ./sql/unstable-target-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - monitoring-network
+
+  unstable-sftp:
+    image: atmoz/sftp
+    command: monitor:password:::reports
+    volumes:
+      - ./sftp/unstable:/home/monitor/reports
+    networks:
+      - monitoring-network
