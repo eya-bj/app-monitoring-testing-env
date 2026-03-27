@@ -9,7 +9,7 @@ services:
   # ─────────────────────────────────────────
   monitoring-platform:
     build:
-      context: ../appmonitioring
+      context: ../app-monitoring-backend
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
