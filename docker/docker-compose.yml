@@ -21,6 +21,8 @@ services:
       SPRING_QUARTZ_JDBC_INITIALIZE_SCHEMA: always
     depends_on:
       - monitoring-db
+    volumes:
+      - monitoring-data:/var/lib/postgresql/data
     networks:
       - monitoring-network
 
@@ -182,3 +184,6 @@ services:
       - ./sftp/unstable:/home/monitor/reports
     networks:
       - monitoring-network
+
+volumes:
+  monitoring-data:
