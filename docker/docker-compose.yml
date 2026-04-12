@@ -19,6 +19,8 @@ services:
       SPRING_DATASOURCE_PASSWORD: admin123
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_QUARTZ_JDBC_INITIALIZE_SCHEMA: always
+      environment:
+      TZ: Africa/Tunis
     depends_on:
       - monitoring-db
     volumes:
