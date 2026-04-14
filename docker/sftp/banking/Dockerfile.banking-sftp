@@ -1,0 +1,43 @@
+FROM debian:bookworm-slim
+
+# Install OpenSSH server + Python + oracledb + cron
+RUN apt-get update && \
+    apt-get install -y openssh-server python3 python3-pip cron && \
+    pip3 install oracledb --break-system-packages && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create monitor user with reports directory
+RUN useradd -m -d /home/monitor -s /bin/bash monitor && \
+    echo "monitor:password" | chpasswd && \
+    mkdir -p /home/monitor/reports && \
+    chown monitor:monitor /home/monitor/reports
+
+# SSH config — remove duplicate Subsystem line, ensure only one exists
+RUN mkdir -p /var/run/sshd && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i '/^Subsystem/d' /etc/ssh/sshd_config && \
+    echo "Subsystem sftp /usr/lib/openssh/sftp-server" >> /etc/ssh/sshd_config
+
+# Copy SSH public key for key-based auth
+RUN mkdir -p /home/monitor/.ssh
+COPY monitoring_key.pub /home/monitor/.ssh/authorized_keys
+RUN chmod 700 /home/monitor/.ssh && \
+    chmod 600 /home/monitor/.ssh/authorized_keys && \
+    chown -R monitor:monitor /home/monitor/.ssh
+
+# Copy the generation script
+COPY generate_reports.py /scripts/generate_reports.py
+
+# Cron job: run every 2 minutes
+RUN echo "*/2 * * * * root DB_HOST=banking-source-db DB_PORT=1521 DB_NAME=FREEPDB1 DB_USER=admin DB_PASS=admin python3 /scripts/generate_reports.py >> /var/log/report-gen.log 2>&1" > /etc/cron.d/report-gen \
+    && chmod 0644 /etc/cron.d/report-gen
+# SSH host keys
+RUN ssh-keygen -A
+
+# Custom entrypoint
+COPY banking-sftp-entrypoint.sh /banking-entrypoint.sh
+RUN chmod +x /banking-entrypoint.sh
+
+EXPOSE 22
+
+ENTRYPOINT ["/banking-entrypoint.sh"]

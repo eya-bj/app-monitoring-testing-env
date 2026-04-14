@@ -19,12 +19,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: admin123
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_QUARTZ_JDBC_INITIALIZE_SCHEMA: always
-      environment:
       TZ: Africa/Tunis
-    depends_on:
-      - monitoring-db
-    volumes:
-      - monitoring-data:/var/lib/postgresql/data
     networks:
       - monitoring-network
 
@@ -184,6 +179,110 @@ services:
     command: monitor:password:::reports
     volumes:
       - ./sftp/unstable:/home/monitor/reports
+    networks:
+      - monitoring-network
+
+  # ─────────────────────────────────────────
+  # BANKING APP (realistic e-banking scenario)
+  # ─────────────────────────────────────────
+  banking-node1:
+    build:
+      context: ../target-app
+      dockerfile: Dockerfile
+    environment:
+      SFTP_HOST: banking-sftp
+      SFTP_USERNAME: monitor
+      SFTP_PASSWORD: password
+      SFTP_FOLDER: /reports
+      APP_AUTH_ENABLED: "true"
+      APP_AUTH_USERNAME: admin
+      APP_AUTH_PASSWORD: admin123
+    depends_on:
+      - banking-sftp
+    networks:
+      - monitoring-network
+
+  banking-node2:
+    build:
+      context: ../target-app
+      dockerfile: Dockerfile
+    environment:
+      SFTP_HOST: banking-sftp
+      SFTP_USERNAME: monitor
+      SFTP_PASSWORD: password
+      SFTP_FOLDER: /reports
+      APP_AUTH_ENABLED: "true"
+      APP_AUTH_USERNAME: admin
+      APP_AUTH_PASSWORD: admin123
+    depends_on:
+      - banking-sftp
+    networks:
+      - monitoring-network
+
+  banking-node3:
+    build:
+      context: ../target-app
+      dockerfile: Dockerfile
+    environment:
+      SFTP_HOST: banking-sftp
+      SFTP_USERNAME: monitor
+      SFTP_PASSWORD: password
+      SFTP_FOLDER: /reports
+      APP_AUTH_ENABLED: "true"
+      APP_AUTH_USERNAME: admin
+      APP_AUTH_PASSWORD: admin123
+    depends_on:
+      - banking-sftp
+    networks:
+      - monitoring-network
+
+  banking-source-db:
+    image: gvenzl/oracle-free:23-slim
+    environment:
+      ORACLE_PASSWORD: admin
+      APP_USER: admin
+      APP_USER_PASSWORD: admin
+    volumes:
+      - ./sql/banking-source-init.sql:/container-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 120s
+    networks:
+      - monitoring-network
+
+  banking-target-db:
+    image: gvenzl/oracle-free:23-slim
+    environment:
+      ORACLE_PASSWORD: admin
+      APP_USER: admin
+      APP_USER_PASSWORD: admin
+    volumes:
+      - ./sql/banking-target-init.sql:/container-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 120s
+    networks:
+      - monitoring-network
+
+  banking-sftp:
+    build:
+      context: ./sftp/banking
+      dockerfile: Dockerfile.banking-sftp
+    environment:
+      DB_HOST: banking-source-db
+      DB_PORT: "1521"
+      DB_NAME: FREEPDB1
+      DB_USER: admin
+      DB_PASS: admin
+    depends_on:
+      banking-source-db:
+        condition: service_healthy
     networks:
       - monitoring-network
 
