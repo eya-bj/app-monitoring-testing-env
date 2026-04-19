@@ -22,6 +22,8 @@ services:
       TZ: Africa/Tunis
     networks:
       - monitoring-network
+    depends_on:
+      - monitoring-db
 
   monitoring-db:
     image: postgres:15
@@ -29,6 +31,10 @@ services:
       POSTGRES_DB: app_monitoring_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: admin123
+      TZ: Africa/Tunis       
+      PGTZ: Africa/Tunis     
+    volumes:
+      - monitoring-data:/var/lib/postgresql/data
     networks:
       - monitoring-network
 
