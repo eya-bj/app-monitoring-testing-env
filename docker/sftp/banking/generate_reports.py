@@ -1,12 +1,12 @@
-import oracledb
+import mysql.connector
 import csv
 import random
 import os
 from datetime import datetime, date
 
 DB_HOST = os.environ.get('DB_HOST', 'banking-source-db')
-DB_PORT = os.environ.get('DB_PORT', '1521')
-DB_NAME = os.environ.get('DB_NAME', 'FREEPDB1')
+DB_PORT = int(os.environ.get('DB_PORT', '3306'))
+DB_NAME = os.environ.get('DB_NAME', 'banking_source')
 DB_USER = os.environ.get('DB_USER', 'admin')
 DB_PASS = os.environ.get('DB_PASS', 'admin')
 REPORTS_DIR = '/home/monitor/reports'
@@ -14,18 +14,42 @@ REPORTS_DIR = '/home/monitor/reports'
 today = date.today().isoformat()
 
 def connect_db():
-    return oracledb.connect(
-        user=DB_USER, password=DB_PASS,
-        dsn=f"{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    return mysql.connector.connect(
+        host=DB_HOST, port=DB_PORT, database=DB_NAME,
+        user=DB_USER, password=DB_PASS
     )
+
+def update_batch_log(conn):
+    """Refresh today's batch_log rows with random status — drives the 'Daily Batch Sync' data check."""
+    cur = conn.cursor()
+
+    daily_sync_status = 'SUCCESS' if random.random() < 0.80 else 'FAILED'
+    balance_status    = 'SUCCESS' if random.random() < 0.85 else 'FAILED'
+
+    cur.execute("DELETE FROM batch_log WHERE run_date = CURDATE()")
+
+    cur.execute("""
+        INSERT INTO batch_log (job_name, run_date, status, records_processed, started_at, finished_at, error_message)
+        VALUES (%s, CURDATE(), %s, %s, NOW(), NOW(), %s)
+    """, ('DAILY_SYNC', daily_sync_status, 500,
+          'Sync failed: connection timeout' if daily_sync_status == 'FAILED' else None))
+
+    cur.execute("""
+        INSERT INTO batch_log (job_name, run_date, status, records_processed, started_at, finished_at, error_message)
+        VALUES (%s, CURDATE(), %s, %s, NOW(), NOW(), %s)
+    """, ('BALANCE_SNAPSHOT', balance_status, 200, None))
+
+    conn.commit()
+    cur.close()
+    print(f"[BATCH] DAILY_SYNC={daily_sync_status}, BALANCE_SNAPSHOT={balance_status}")
 
 def generate_csv(conn):
     cur = conn.cursor()
     cur.execute("""
-        SELECT TO_CHAR(created_at, 'YYYY-MM-DD'), source_account, target_account,
+        SELECT DATE_FORMAT(created_at, '%Y-%m-%d'), source_account, target_account,
                amount, currency, status
         FROM transactions
-        WHERE TRUNC(created_at) = TRUNC(SYSDATE)
+        WHERE DATE(created_at) = CURDATE()
         ORDER BY created_at
     """)
     rows = cur.fetchall()
@@ -59,15 +83,15 @@ def generate_eod_report(conn):
         SELECT job_name, status, records_processed,
                started_at, finished_at, error_message
         FROM batch_log
-        WHERE run_date = TRUNC(SYSDATE)
+        WHERE run_date = CURDATE()
         ORDER BY started_at
     """)
     jobs = cur.fetchall()
 
-    cur.execute("SELECT COUNT(*) FROM transactions WHERE TRUNC(created_at) = TRUNC(SYSDATE)")
+    cur.execute("SELECT COUNT(*) FROM transactions WHERE DATE(created_at) = CURDATE()")
     tx_count = cur.fetchone()[0]
 
-    cur.execute("SELECT NVL(SUM(amount), 0) FROM transactions WHERE TRUNC(created_at) = TRUNC(SYSDATE) AND status = 'SUCCESS'")
+    cur.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE DATE(created_at) = CURDATE() AND status = 'SUCCESS'")
     tx_total = cur.fetchone()[0]
     cur.close()
 
@@ -80,7 +104,7 @@ def generate_eod_report(conn):
     all_success = all(j[1] == 'SUCCESS' for j in jobs)
 
     with open(filepath, 'w') as f:
-        f.write(f"=== END OF DAY REPORT — {today} ===\n\n")
+        f.write(f"=== END OF DAY REPORT {today} ===\n\n")
         f.write(f"TOTAL_TRANSACTIONS: {tx_count}\n")
         f.write(f"TOTAL_AMOUNT: {tx_total}\n")
         f.write(f"BATCH_STATUS: {'SUCCESS' if all_success else 'FAILED'}\n\n")
@@ -96,6 +120,7 @@ def generate_eod_report(conn):
 if __name__ == '__main__':
     try:
         conn = connect_db()
+        update_batch_log(conn)
         generate_csv(conn)
         generate_eod_report(conn)
         conn.close()

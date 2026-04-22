@@ -1,0 +1,39 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    openssh-server \
+    python3 \
+    python3-pip \
+    cron \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --break-system-packages psycopg2-binary
+
+# Create monitor user with password auth
+RUN useradd -m -d /home/monitor -s /bin/bash monitor \
+    && echo "monitor:password" | chpasswd \
+    && mkdir -p /home/monitor/reports \
+    && chown -R monitor:monitor /home/monitor
+
+# SSH server config — password auth enabled
+RUN mkdir /var/run/sshd \
+    && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config \
+    && sed -i '/Subsystem.*sftp/d' /etc/ssh/sshd_config \
+    && echo "Subsystem sftp internal-sftp" >> /etc/ssh/sshd_config
+
+# Report generator
+COPY generate_stable.py /opt/generate_stable.py
+RUN chmod +x /opt/generate_stable.py
+
+# Cron — every 2 minutes
+RUN echo "*/2 * * * * monitor /usr/bin/python3 /opt/generate_stable.py >> /var/log/reports.log 2>&1" > /etc/cron.d/reports \
+    && chmod 0644 /etc/cron.d/reports \
+    && touch /var/log/reports.log \
+    && chown monitor:monitor /var/log/reports.log
+
+COPY stable-sftp-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 22
+
+ENTRYPOINT ["/entrypoint.sh"]

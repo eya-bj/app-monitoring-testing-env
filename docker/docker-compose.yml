@@ -69,20 +69,6 @@ services:
     networks:
       - monitoring-network
 
-  stable-app-node3:
-    build:
-      context: ../target-app
-      dockerfile: Dockerfile
-    environment:
-      SFTP_HOST: stable-sftp
-      SFTP_USERNAME: monitor
-      SFTP_PASSWORD: password
-      SFTP_FOLDER: /reports
-    depends_on:
-      - stable-sftp
-    networks:
-      - monitoring-network
-
   stable-source-db:
     image: postgres:15
     environment:
@@ -94,27 +80,23 @@ services:
     networks:
       - monitoring-network
 
-  stable-target-db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: stable_target
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
-    volumes:
-      - ./sql/stable-target-init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - monitoring-network
-
   stable-sftp:
-    image: atmoz/sftp
-    command: monitor:password:::reports
-    volumes:
-      - ./sftp/stable:/home/monitor/reports
+    build:
+      context: ./sftp/stable
+      dockerfile: Dockerfile.stable-sftp
+    environment:
+      DB_HOST: stable-source-db
+      DB_PORT: "5432"
+      DB_NAME: stable_source
+      DB_USER: admin
+      DB_PASS: admin
+    depends_on:
+      - stable-source-db
     networks:
       - monitoring-network
-
+      
   # ─────────────────────────────────────────
-  # UNSTABLE APP CLUSTER
+  # UNSTABLE APP CLUSTER — Legacy Recon Service
   # ─────────────────────────────────────────
   unstable-app-node1:
     build:
@@ -144,20 +126,6 @@ services:
     networks:
       - monitoring-network
 
-  unstable-app-node3:
-    build:
-      context: ../target-app
-      dockerfile: Dockerfile
-    environment:
-      SFTP_HOST: unstable-sftp
-      SFTP_USERNAME: monitor
-      SFTP_PASSWORD: password
-      SFTP_FOLDER: /reports
-    depends_on:
-      - unstable-sftp
-    networks:
-      - monitoring-network
-
   unstable-source-db:
     image: postgres:15
     environment:
@@ -169,27 +137,23 @@ services:
     networks:
       - monitoring-network
 
-  unstable-target-db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: unstable_target
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
-    volumes:
-      - ./sql/unstable-target-init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - monitoring-network
-
   unstable-sftp:
-    image: atmoz/sftp
-    command: monitor:password:::reports
-    volumes:
-      - ./sftp/unstable:/home/monitor/reports
+    build:
+      context: ./sftp/unstable
+      dockerfile: Dockerfile.unstable-sftp
+    environment:
+      DB_HOST: unstable-source-db
+      DB_PORT: "5432"
+      DB_NAME: unstable_source
+      DB_USER: admin
+      DB_PASS: admin
+    depends_on:
+      - unstable-source-db
     networks:
       - monitoring-network
 
   # ─────────────────────────────────────────
-  # BANKING APP (realistic e-banking scenario)
+  # BANKING APP 
   # ─────────────────────────────────────────
   banking-node1:
     build:
@@ -243,36 +207,40 @@ services:
       - monitoring-network
 
   banking-source-db:
-    image: gvenzl/oracle-free:23-slim
+    image: mysql:8.0
     environment:
-      ORACLE_PASSWORD: admin
-      APP_USER: admin
-      APP_USER_PASSWORD: admin
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: banking_source
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      TZ: Africa/Tunis
     volumes:
-      - ./sql/banking-source-init.sql:/container-entrypoint-initdb.d/init.sql
+      - ./sql/banking-source-init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "healthcheck.sh"]
-      interval: 15s
-      timeout: 10s
-      retries: 30
-      start_period: 120s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uadmin", "-padmin"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
       - monitoring-network
 
   banking-target-db:
-    image: gvenzl/oracle-free:23-slim
+    image: mysql:8.0
     environment:
-      ORACLE_PASSWORD: admin
-      APP_USER: admin
-      APP_USER_PASSWORD: admin
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: banking_target
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      TZ: Africa/Tunis
     volumes:
-      - ./sql/banking-target-init.sql:/container-entrypoint-initdb.d/init.sql
+      - ./sql/banking-target-init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "healthcheck.sh"]
-      interval: 15s
-      timeout: 10s
-      retries: 30
-      start_period: 120s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uadmin", "-padmin"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
       - monitoring-network
 
@@ -282,8 +250,8 @@ services:
       dockerfile: Dockerfile.banking-sftp
     environment:
       DB_HOST: banking-source-db
-      DB_PORT: "1521"
-      DB_NAME: FREEPDB1
+      DB_PORT: "3306"
+      DB_NAME: banking_source
       DB_USER: admin
       DB_PASS: admin
     depends_on:
