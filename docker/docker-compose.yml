@@ -254,8 +254,15 @@ services:
       DB_NAME: banking_source
       DB_USER: admin
       DB_PASS: admin
+      DB_HOST_TARGET: banking-target-db    
+      DB_PORT_TARGET: "3306"               
+      DB_NAME_TARGET: banking_target       
+      DB_USER_TARGET: admin                
+      DB_PASS_TARGET: admin                
     depends_on:
       banking-source-db:
+        condition: service_healthy
+      banking-target-db:                  
         condition: service_healthy
     networks:
       - monitoring-network

@@ -2,7 +2,7 @@ import psycopg2
 import csv
 import random
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 DB_HOST = os.environ.get('DB_HOST', 'unstable-source-db')
 DB_PORT = int(os.environ.get('DB_PORT', '5432'))
@@ -13,11 +13,25 @@ REPORTS_DIR = '/home/monitor/reports'
 
 today = date.today().isoformat()
 
+# Realistic catalog for unmatched transactions
+SOURCE_SYSTEMS = ['LEGACY_CORE', 'PAYMENT_GW', 'CARD_NETWORK', 'INTERNAL_BANK', 'PARTNER_BANK']
+CURRENCIES = ['TND', 'EUR', 'USD']
+REASONS = [
+    'Amount mismatch with source ledger',
+    'Reference not found in target system',
+    'Duplicate transaction reported',
+    'Currency conversion discrepancy',
+    'Timestamp out of expected window',
+    'Source system did not acknowledge'
+]
+
+
 def connect_db():
     return psycopg2.connect(
         host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
         user=DB_USER, password=DB_PASS
     )
+
 
 def refresh_todays_batch(conn):
     """Refresh today's reconciliation batch — mostly FAILED (this system is broken)."""
@@ -48,6 +62,39 @@ def refresh_todays_batch(conn):
     conn.commit()
     cur.close()
     print(f"[BATCH] RECONCILIATION_TODAY={status}")
+
+
+def refresh_unmatched_transactions(conn):
+    """Keep ~150 unmatched transactions in the last-24h window so the
+       'Unmatched Transactions Threshold' check (>50) stays FAILED every day.
+       Strategy: insert 25 fresh rows each tick, delete rows older than 25h
+       so the table stays bounded but the 24h window always has 150+ entries."""
+    cur = conn.cursor()
+
+    # Cleanup — drop rows older than 25h
+    cur.execute("DELETE FROM unmatched_transactions WHERE reported_at < NOW() - INTERVAL '25 hours'")
+    deleted = cur.rowcount
+
+    # Insert 25 fresh rows spread over the last 5 minutes
+    rows = []
+    for i in range(25):
+        rows.append((
+            f"TXN-{random.randint(100000, 999999)}",
+            round(random.uniform(50, 5000), 2),
+            random.choice(CURRENCIES),
+            random.choice(SOURCE_SYSTEMS),
+            datetime.now() - timedelta(seconds=random.randint(0, 300)),
+            random.choice(REASONS)
+        ))
+    cur.executemany("""
+        INSERT INTO unmatched_transactions
+            (transaction_ref, amount, currency, source_system, reported_at, reason)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, rows)
+    conn.commit()
+    cur.close()
+    print(f"[UNMATCHED] inserted 25 rows, cleaned up {deleted} old rows")
+
 
 def generate_recon_report(conn):
     """Recon report generation is broken — file mostly missing, occasionally corrupt."""
@@ -89,11 +136,16 @@ def generate_recon_report(conn):
 
     print(f"[OK] Generated {filepath} with {len(rows)} rows")
 
+
 if __name__ == '__main__':
+    conn = None
     try:
         conn = connect_db()
         refresh_todays_batch(conn)
+        refresh_unmatched_transactions(conn)
         generate_recon_report(conn)
-        conn.close()
     except Exception as e:
         print(f"[ERROR] {e}")
+    finally:
+        if conn:
+            conn.close()
