@@ -7,12 +7,21 @@ services:
   # ─────────────────────────────────────────
   # MONITORING PLATFORM
   # ─────────────────────────────────────────
-  monitoring-platform:
-    build:
-      context: ../app-monitoring-backend
-      dockerfile: Dockerfile
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "80:80"
+    volumes:
+      - ../app-monitoring-backend/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - monitoring-platform
+      - monitoring-frontend
+    networks:
+      - monitoring-network
+
+  monitoring-platform:
+    image: appmonitoring-backend:prod
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://monitoring-db:5432/app_monitoring_db
       SPRING_DATASOURCE_USERNAME: postgres
@@ -20,10 +29,26 @@ services:
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       SPRING_QUARTZ_JDBC_INITIALIZE_SCHEMA: always
       TZ: Africa/Tunis
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      OLLAMA_URL: ${OLLAMA_URL}
+      OLLAMA_MODEL: ${OLLAMA_MODEL}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_URL: ${GROQ_URL}
+      GROQ_MODEL: ${GROQ_MODEL}
     networks:
       - monitoring-network
     depends_on:
       - monitoring-db
+
+  monitoring-frontend:
+    image: appmonitoring-frontend:prod
+    restart: unless-stopped
+    networks:
+      - monitoring-network
 
   monitoring-db:
     image: postgres:15
@@ -31,8 +56,8 @@ services:
       POSTGRES_DB: app_monitoring_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: admin123
-      TZ: Africa/Tunis       
-      PGTZ: Africa/Tunis     
+      TZ: Africa/Tunis
+      PGTZ: Africa/Tunis
     volumes:
       - monitoring-data:/var/lib/postgresql/data
     networks:
@@ -94,7 +119,7 @@ services:
       - stable-source-db
     networks:
       - monitoring-network
-      
+
   # ─────────────────────────────────────────
   # UNSTABLE APP CLUSTER — Legacy Recon Service
   # ─────────────────────────────────────────
@@ -153,7 +178,7 @@ services:
       - monitoring-network
 
   # ─────────────────────────────────────────
-  # BANKING APP 
+  # BANKING APP
   # ─────────────────────────────────────────
   banking-node1:
     build:
@@ -254,15 +279,15 @@ services:
       DB_NAME: banking_source
       DB_USER: admin
       DB_PASS: admin
-      DB_HOST_TARGET: banking-target-db    
-      DB_PORT_TARGET: "3306"               
-      DB_NAME_TARGET: banking_target       
-      DB_USER_TARGET: admin                
-      DB_PASS_TARGET: admin                
+      DB_HOST_TARGET: banking-target-db
+      DB_PORT_TARGET: "3306"
+      DB_NAME_TARGET: banking_target
+      DB_USER_TARGET: admin
+      DB_PASS_TARGET: admin
     depends_on:
       banking-source-db:
         condition: service_healthy
-      banking-target-db:                  
+      banking-target-db:
         condition: service_healthy
     networks:
       - monitoring-network
